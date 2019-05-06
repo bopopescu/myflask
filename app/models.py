@@ -16,12 +16,13 @@ from . import db
 from . import login_manager
 
 
+# 权限值
 class Permission:
-    FOLLOW = 1
-    COMMENT = 2
-    WRITE = 4
-    MODERATE = 8
-    ADMIN = 16
+    FOLLOW = 1  # 关注他人
+    COMMENT = 2     # 发表评论
+    WRITE = 4   # 写文章
+    MODERATE = 8    # 管理他人发布的评论
+    ADMIN = 16  # 管理员
 
 
 class Role(db.Model):

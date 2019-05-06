@@ -131,8 +131,10 @@ div.flask-pagedown-preview h3 {
 }
 .user-info {
     display: inline-block;
-    width: 80%;
-    margin-left: 20%;
+    margin-left: 225px;
+}
+.user-info>h1 {
+    margin-top: 0!important;
 }
 .post-avatar {
     width: 48px;

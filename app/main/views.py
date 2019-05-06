@@ -7,6 +7,7 @@ import os
 from datetime import datetime
 from flask import render_template, session, redirect, url_for, flash, abort, request, current_app, make_response
 from flask_login import login_required, current_user
+from flask_sqlalchemy import get_debug_queries
 
 from app.email import send_email
 from . import main
@@ -81,6 +82,7 @@ def user(username):
     return render_template('user.html', user=user, posts=posts, pagination=pagination)
 
 
+# 编辑信息
 @main.route('/edit-profile', methods=['GET', 'POST'])
 @login_required
 def edit_profile():
@@ -92,16 +94,17 @@ def edit_profile():
 
         #新增用户头像
         avatar = request.files['avatar']
-        fname = avatar.filename
-        UPLOAD_FOLDER = os.getcwd() + '\\app\\static\\avatar\\'
-        ALLOWED_EXTENSIONS = ['png', 'PNG', 'jpg', 'jpeg', 'JPEG', 'JPG', 'gif']
-        # 判断头像的图片格式是否符合要求
-        flag = '.' in fname and fname.rsplit('.', 1)[1] in ALLOWED_EXTENSIONS
-        if not flag:
-            flash('图片格式错误')
-            return redirect(url_for('main.user', username=current_user.username))
-        avatar.save('{}{}_{}'.format(UPLOAD_FOLDER, current_user.username, fname))
-        current_user.avatar = '/static/avatar/{}_{}'.format(current_user.username, fname)
+        if avatar:
+            fname = avatar.filename
+            UPLOAD_FOLDER = os.getcwd() + '\\app\\static\\avatar\\'
+            ALLOWED_EXTENSIONS = ['png', 'PNG', 'jpg', 'jpeg', 'JPEG', 'JPG', 'gif']
+            # 判断头像的图片格式是否符合要求
+            flag = '.' in fname and fname.rsplit('.', 1)[1] in ALLOWED_EXTENSIONS
+            if not flag:
+                flash('图片格式错误')
+                return redirect(url_for('main.user', username=current_user.username))
+            avatar.save('{}{}_{}'.format(UPLOAD_FOLDER, current_user.username, fname))
+            current_user.avatar = '/static/avatar/{}_{}'.format(current_user.username, fname)
 
         db.session.add(current_user)
         flash('Your profile has been updated.')
@@ -112,6 +115,7 @@ def edit_profile():
     return render_template('edit_profile.html', form=form)
 
 
+# 编辑信息[管理员]
 @main.route('/edit-profile/<int:id>', methods=['GET', 'POST'])
 @login_required
 @admin_required
@@ -139,6 +143,7 @@ def edit_profile_admin(id):
     return render_template('edit_profile.html', form=form, user=user)
 
 
+# 某个用户的文章列表
 @main.route('/post/<int:id>', methods=['GET', 'POST'])
 def post(id):
     post = Post.query.get_or_404(id)
@@ -160,11 +165,12 @@ def post(id):
     return render_template('post.html', posts=[post], form=form, comments=comments, pagination=pagination)
 
 
+# 编辑文章
 @main.route('/edit/<int:id>', methods=['GET', 'POST'])
 @login_required
 def edit(id):
     post = Post.query.get_or_404(id)
-    if current_user != post.author and not current_user.can(Permission.ADMINISTER):
+    if current_user != post.author and not current_user.can(Permission.ADMIN):
         abort(403)
     form = PostForm()
     if form.validate_on_submit():
@@ -176,6 +182,7 @@ def edit(id):
     return render_template('edit_post.html', form=form)
 
 
+# 关注
 @main.route('/follow/<username>')
 @login_required
 @permission_required(Permission.FOLLOW)
@@ -192,6 +199,7 @@ def follow(username):
     return redirect(url_for('.user', username=username))
 
 
+# 取消关注
 @main.route('/unfollow/<username>')
 @login_required
 @permission_required(Permission.FOLLOW)
@@ -208,6 +216,7 @@ def unfollow(username):
     return redirect(url_for('.user', username=username))
 
 
+# 被关注列表
 @main.route('/followers/<username>')
 def followers(username):
     user = User.query.filter_by(username=username).first()
@@ -225,6 +234,7 @@ def followers(username):
                            follows=follows)
 
 
+# 关注列表
 @main.route('/followed_by/<username>')
 def followed_by(username):
     user = User.query.filter_by(username=username).first()
@@ -242,6 +252,7 @@ def followed_by(username):
                            follows=follows)
 
 
+# 管理评论
 @main.route('/moderate')
 @login_required
 @permission_required(Permission.MODERATE)
@@ -254,6 +265,7 @@ def moderate():
     return render_template('moderate.html', comments=comments, page=page, pagination=pagination)
 
 
+# 启用评论
 @main.route('/moderate/enable/<int:id>')
 @login_required
 @permission_required(Permission.MODERATE)
@@ -265,6 +277,7 @@ def moderate_enable(id):
     return redirect(url_for('.moderate', page=request.args.get('page', 1, type=int)))
 
 
+# 禁用评论
 @main.route('/moderate/disable/<int:id>')
 @login_required
 @permission_required(Permission.MODERATE)
@@ -274,3 +287,31 @@ def moderate_disable(id):
     db.session.add(comment)
     db.session.commit()
     return redirect(url_for('.moderate', page=request.args.get('page', 1, type=int)))
+
+
+# 关闭服务器的路由
+@main.route('/shutdown')
+def server_shutdown():
+    """
+    当所有测试完成后，要停止Flask服务器，而且最好使用一种优雅的方式，以便代码覆盖检测引擎等后台作业能够顺利完成
+    """
+    if not current_app.testing:     # 只有运行在测试环境中时这个关闭服务的路由才可用
+        abort(404)
+    shutdown = request.environ.get('werkzeug.server.shutdown')
+    if not shutdown:
+        abort(500)
+    shutdown()
+    return 'Shutting down...'
+
+
+# 报告缓慢的数据库查询
+@main.after_app_request
+def after_request(response):
+    for query in get_debug_queries():
+        if query.duration >= current_app.config['FLASKY_SLOW_DB_QUERY_TIME']:
+            current_app.logger.warning(
+                'Slow query: {0}\nParameters: {1}\nDuration: {2}\nContext: {3}'.format(
+                    query.statement, query.parameters, query.duration, query.context
+                )
+            )
+    return response
